@@ -1,0 +1,47 @@
+<resources>
+    <string name="app_name">Splitwise Študent</string>
+
+    <!-- Groups Screen -->
+    <string name="my_groups">Moje Skupiny</string>
+    <string name="add_group">Pridať skupinu</string>
+    <string name="no_groups">Zatiaľ nemáte žiadne skupiny.</string>
+    <string name="delete_group">Vymazať skupinu</string>
+    <string name="new_group">Nová skupina</string>
+    <string name="group_name">Názov skupiny</string>
+    <string name="enable_notifications">Povoliť notifikácie o dlhoch</string>
+    <string name="create">Vytvoriť</string>
+    <string name="cancel">Zrušiť</string>
+
+    <!-- Main Screen -->
+    <string name="back">Späť</string>
+    <string name="add_member">Pridať člena</string>
+    <string name="add_expense">Pridať výdavok</string>
+    <string name="last_expenses">Posledné výdavky</string>
+    <string name="new_member">Nový člen</string>
+    <string name="name">Meno</string>
+    <string name="add">Pridať</string>
+    <string name="balances_overview">Prehľad zostatkov</string>
+    <string name="no_expenses">Žiadne výdavky</string>
+    <string name="paid_by">Zaplatil/a %1$s</string>
+    <string name="edit">Upraviť</string>
+    <string name="delete">Vymazať</string>
+
+    <!-- Add Expense Screen -->
+    <string name="edit_expense">Upraviť výdavok</string>
+    <string name="description">Popis</string>
+    <string name="amount_euro">Suma (€)</string>
+    <string name="who_paid">Kto platil?</string>
+    <string name="select_member">Vyberte...</string>
+    <string name="split_type">Typ rozdelenia:</string>
+    <string name="equally">Rovnako</string>
+    <string name="amounts">Sumy</string>
+    <string name="percentage">%</string>
+    <string name="split_among">Rozdeliť medzi:</string>
+    <string name="save_expense">Uložiť výdavok</string>
+    <string name="update_expense">Aktualizovať výdavok</string>
+    <string name="total_label_exact">Spolu: %1$.2f / %2$.2f</string>
+    <string name="total_label_percent">Spolu: %1$.2f%% / 100%%</string>
+    <string name="notification_channel_name">Upozornenia na dlhy</string>
+    <string name="debt_status_title">Aktuálny stav dlhov: %1$s</string>
+    <string name="debt_owes">%1$s: %2$.2f €</string>
+</resources>
