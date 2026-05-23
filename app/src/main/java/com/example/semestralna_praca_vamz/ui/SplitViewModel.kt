@@ -1,117 +1,186 @@
 package com.example.semestralna_praca_vamz.ui
 
 import android.app.Application
+import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.semestralna_praca_vamz.data.db.*
+import com.example.semestralna_praca_vamz.data.db.SplitType
+import com.example.semestralna_praca_vamz.data.firebase.*
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 class SplitViewModel(application: Application) : AndroidViewModel(application) {
-    private val dao = AppDatabase.getDatabase(application).splitDao()
+    private val db = Firebase.firestore
+    private val auth = Firebase.auth
     private val context = application.applicationContext
 
-    val groups: StateFlow<List<GroupEntity>> = dao.getAllGroupsFlow()
+    // Reactive Auth State
+    var currentUser by mutableStateOf(auth.currentUser)
+        private set
+
+    init {
+        auth.addAuthStateListener { firebaseAuth ->
+            currentUser = firebaseAuth.currentUser
+        }
+    }
+
+    // Real-time Groups
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val groups: StateFlow<List<Group>> = snapshotFlow { currentUser }
+        .flatMapLatest { user ->
+            if (user == null) flowOf(emptyList<Group>())
+            else callbackFlow {
+                val subscription = db.collection("groups")
+                    .whereArrayContains("members", user.uid)
+                    .addSnapshotListener { snapshot, error ->
+                        if (error != null) {
+                            Log.e("Firebase", "Groups error: ${error.message}")
+                            return@addSnapshotListener
+                        }
+                        val groupsList = snapshot?.toObjects(Group::class.java) ?: emptyList()
+                        trySend(groupsList)
+                    }
+                awaitClose { subscription.remove() }
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun addGroup(name: String, notificationsEnabled: Boolean) {
         viewModelScope.launch {
-            dao.insertGroup(GroupEntity(name = name, notificationsEnabled = notificationsEnabled))
+            val userId = currentUser?.uid ?: return@launch
+            val newGroupRef = db.collection("groups").document()
+            val newGroup = Group(
+                id = newGroupRef.id,
+                name = name,
+                notificationsEnabled = notificationsEnabled,
+                members = listOf(userId)
+            )
+            newGroupRef.set(newGroup).await()
         }
     }
 
-    fun deleteGroup(group: GroupEntity) {
+    fun deleteGroup(groupId: String) {
         viewModelScope.launch {
-            dao.deleteGroup(group)
+            db.collection("groups").document(groupId).delete().await()
         }
     }
 
-    fun getGroupMembers(groupId: Long): Flow<List<UserEntity>> = dao.getGroupMembersFlow(groupId)
+    fun getGroupMembers(groupId: String): Flow<List<User>> = callbackFlow {
+        val subscription = db.collection("groups").document(groupId)
+            .addSnapshotListener { snapshot, _ ->
+                val memberIds = snapshot?.get("members") as? List<String> ?: emptyList()
+                if (memberIds.isNotEmpty()) {
+                    db.collection("users").whereIn("id", memberIds)
+                        .get()
+                        .addOnSuccessListener { userSnapshots ->
+                            trySend(userSnapshots.toObjects(User::class.java))
+                        }
+                } else {
+                    trySend(emptyList())
+                }
+            }
+        awaitClose { subscription.remove() }
+    }
 
-    fun addMemberToGroup(groupId: Long, name: String) {
+    fun addMemberToGroup(groupId: String, email: String) {
         viewModelScope.launch {
-            val userId = dao.insertUser(UserEntity(name = name))
-            dao.insertGroupMember(GroupMemberEntity(groupId, userId))
+            val userSnapshot = db.collection("users").whereEqualTo("email", email).get().await()
+            val user = userSnapshot.toObjects(User::class.java).firstOrNull() ?: return@launch
+            
+            val groupRef = db.collection("groups").document(groupId)
+            val group = groupRef.get().await().toObject(Group::class.java) ?: return@launch
+            
+            if (!group.members.contains(user.id)) {
+                groupRef.update("members", group.members + user.id).await()
+            }
         }
     }
 
-    fun getExpenses(groupId: Long): Flow<List<ExpenseEntity>> = dao.getExpensesForGroupFlow(groupId)
+    fun getExpenses(groupId: String): Flow<List<Expense>> = callbackFlow {
+        val subscription = db.collection("expenses")
+            .whereEqualTo("groupId", groupId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("Firebase", "Expenses error: ${error.message}")
+                    return@addSnapshotListener
+                }
+                val expenses = snapshot?.toObjects(Expense::class.java) ?: emptyList()
+                trySend(expenses.sortedByDescending { it.createdAt })
+            }
+        awaitClose { subscription.remove() }
+    }
 
-    fun deleteExpense(expense: ExpenseEntity) {
+    fun deleteExpense(expenseId: String) {
         viewModelScope.launch {
-            dao.deleteSharesForExpense(expense.id)
-            dao.deleteExpense(expense)
+            db.collection("expenses").document(expenseId).delete().await()
         }
     }
 
-    suspend fun getExpenseById(id: Long): ExpenseEntity? = dao.getExpenseById(id)
-    suspend fun getSharesForExpense(expenseId: Long): List<ExpenseShareEntity> = dao.getSharesForExpense(expenseId)
+    suspend fun getExpenseById(id: String): Expense? {
+        return db.collection("expenses").document(id).get().await().toObject(Expense::class.java)
+    }
 
     fun addExpenseToGroup(
-        groupId: Long,
+        groupId: String,
         description: String,
         amount: Double,
-        payerId: Long,
-        participantsIds: List<Long>,
+        payerId: String,
+        participantsIds: List<String>,
         splitType: SplitType,
-        splitDetails: Map<Long, Double>,
-        existingExpenseId: Long? = null
+        splitDetails: Map<String, Double>,
+        existingExpenseId: String? = null
     ) {
         viewModelScope.launch {
             val amountCents = (amount * 100).toLong()
-            
-            val expenseId = if (existingExpenseId == null) {
-                dao.insertExpense(
-                    ExpenseEntity(
-                        groupId = groupId,
-                        paidByUserId = payerId,
-                        amountCents = amountCents,
-                        description = description,
-                        splitType = splitType
-                    )
-                )
-            } else {
-                val existing = dao.getExpenseById(existingExpenseId)
-                if (existing != null) {
-                    dao.updateExpense(existing.copy(
-                        paidByUserId = payerId,
-                        amountCents = amountCents,
-                        description = description,
-                        splitType = splitType
-                    ))
-                    dao.deleteSharesForExpense(existingExpenseId)
-                }
-                existingExpenseId
-            }
+            val shares = mutableMapOf<String, Long>()
 
-            val shares = when (splitType) {
+            when (splitType) {
                 SplitType.EQUAL -> {
                     val shareCents = amountCents / participantsIds.size
-                    participantsIds.map { id ->
-                        ExpenseShareEntity(expenseId, id, shareCents)
-                    }
+                    participantsIds.forEach { shares[it] = shareCents }
                 }
                 SplitType.EXACT -> {
-                    participantsIds.map { id ->
-                        val shareCents = ((splitDetails[id] ?: 0.0) * 100).toLong()
-                        ExpenseShareEntity(expenseId, id, shareCents)
-                    }
+                    participantsIds.forEach { shares[it] = ((splitDetails[it] ?: 0.0) * 100).toLong() }
                 }
                 SplitType.PERCENTAGE -> {
-                    participantsIds.map { id ->
-                        val percent = splitDetails[id] ?: 0.0
-                        val shareCents = (amountCents * (percent / 100.0)).toLong()
-                        ExpenseShareEntity(expenseId, id, shareCents)
-                    }
+                    participantsIds.forEach { shares[it] = (amountCents * ((splitDetails[it] ?: 0.0) / 100.0)).toLong() }
                 }
             }
-            dao.insertExpenseShares(shares)
 
-            // Trigger notification if enabled
-            val group = groups.value.find { it.id == groupId }
+            val expenseRef = if (existingExpenseId == null) {
+                db.collection("expenses").document()
+            } else {
+                db.collection("expenses").document(existingExpenseId)
+            }
+
+            val expense = Expense(
+                id = expenseRef.id,
+                groupId = groupId,
+                paidByUserId = payerId,
+                amountCents = amountCents,
+                description = description,
+                createdAt = System.currentTimeMillis(),
+                splitType = splitType,
+                shares = shares
+            )
+
+            expenseRef.set(expense).await()
+
+            // Trigger notification
+            val group = db.collection("groups").document(groupId).get().await().toObject(Group::class.java)
             if (group?.notificationsEnabled == true) {
                 val balances = getBalances(groupId)
-                val members = dao.getGroupMembersFlow(groupId).first()
+                val members = getGroupMembers(groupId).first()
                 val namedBalances = balances.mapKeys { entry -> 
                     members.find { it.id == entry.key }?.name ?: "Neznámy"
                 }
@@ -120,23 +189,45 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    suspend fun getBalances(groupId: Long): Map<Long, Double> {
-        val groupData = dao.getGroupWithData(groupId) ?: return emptyMap()
-        val balances = mutableMapOf<Long, Long>() // ID to cents
-        groupData.members.forEach { balances[it.id] = 0L }
+    suspend fun getBalances(groupId: String): Map<String, Double> {
+        val groupSnapshot = db.collection("groups").document(groupId).get().await()
+        val group = groupSnapshot.toObject(Group::class.java) ?: return emptyMap()
+        val expensesSnapshot = db.collection("expenses").whereEqualTo("groupId", groupId).get().await()
+        val expenses = expensesSnapshot.toObjects(Expense::class.java)
+        
+        val balances = mutableMapOf<String, Long>() // ID to cents
+        group.members.forEach { balances[it] = 0L }
 
-        groupData.expenses.forEach { expense ->
+        expenses.forEach { expense ->
             balances[expense.paidByUserId] = (balances[expense.paidByUserId] ?: 0L) + expense.amountCents
-            val shares = dao.getSharesForExpense(expense.id)
-            shares.forEach { share ->
-                balances[share.userId] = (balances[share.userId] ?: 0L) - share.owedAmountCents
+            expense.shares.forEach { (userId, amount) ->
+                balances[userId] = (balances[userId] ?: 0L) - amount
             }
         }
         
         return balances.mapValues { it.value / 100.0 }
     }
-    
-    fun getUserFlow(userId: Long): Flow<UserEntity?> = flow {
-        emit(dao.getUserById(userId))
+
+    fun login(email: String, pass: String, onSuccess: () -> Unit) {
+        auth.signInWithEmailAndPassword(email, pass).addOnSuccessListener {
+            currentUser = it.user
+            onSuccess()
+        }
+    }
+
+    fun register(email: String, pass: String, name: String, onSuccess: () -> Unit) {
+        auth.createUserWithEmailAndPassword(email, pass).addOnSuccessListener { result ->
+            val userId = result.user?.uid ?: return@addOnSuccessListener
+            val user = User(id = userId, name = name, email = email)
+            db.collection("users").document(userId).set(user).addOnSuccessListener {
+                currentUser = result.user
+                onSuccess()
+            }
+        }
+    }
+
+    fun logout() {
+        auth.signOut()
+        currentUser = null
     }
 }

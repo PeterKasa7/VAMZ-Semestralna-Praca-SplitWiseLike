@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,12 +15,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.semestralna_praca_vamz.R
-import com.example.semestralna_praca_vamz.data.db.GroupEntity
 import com.example.semestralna_praca_vamz.ui.SplitViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GroupsScreen(viewModel: SplitViewModel, onGroupClick: (Long) -> Unit) {
+fun GroupsScreen(viewModel: SplitViewModel, onGroupClick: (String) -> Unit) {
     var showDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
     var notificationsEnabled by remember { mutableStateOf(false) }
@@ -27,7 +27,14 @@ fun GroupsScreen(viewModel: SplitViewModel, onGroupClick: (Long) -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.my_groups)) })
+            TopAppBar(
+                title = { Text(stringResource(R.string.my_groups)) },
+                actions = {
+                    IconButton(onClick = { viewModel.logout() }) {
+                        Icon(Icons.Default.ExitToApp, contentDescription = "Odhlásiť sa")
+                    }
+                }
+            )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { showDialog = true }) {
@@ -49,7 +56,7 @@ fun GroupsScreen(viewModel: SplitViewModel, onGroupClick: (Long) -> Unit) {
                     ListItem(
                         headlineContent = { Text(group.name) },
                         trailingContent = {
-                            IconButton(onClick = { viewModel.deleteGroup(group) }) {
+                            IconButton(onClick = { viewModel.deleteGroup(group.id) }) {
                                 Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_group))
                             }
                         },

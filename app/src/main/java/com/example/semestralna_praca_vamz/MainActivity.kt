@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -16,9 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.semestralna_praca_vamz.ui.SplitViewModel
-import com.example.semestralna_praca_vamz.ui.screens.AddExpenseScreen
-import com.example.semestralna_praca_vamz.ui.screens.GroupsScreen
-import com.example.semestralna_praca_vamz.ui.screens.MainScreen
+import com.example.semestralna_praca_vamz.ui.screens.*
 import com.example.semestralna_praca_vamz.ui.theme.Semestralna_praca_VAMZTheme
 
 class MainActivity : ComponentActivity() {
@@ -42,8 +41,29 @@ class MainActivity : ComponentActivity() {
 fun SplitApp() {
     val navController = rememberNavController()
     val viewModel: SplitViewModel = viewModel()
+    val currentUser = viewModel.currentUser
 
-    NavHost(navController = navController, startDestination = "groups") {
+    LaunchedEffect(currentUser) {
+        if (currentUser == null) {
+            navController.navigate("auth") {
+                popUpTo(0)
+            }
+        }
+    }
+
+    val startDestination = if (currentUser == null) "auth" else "groups"
+
+    NavHost(navController = navController, startDestination = startDestination) {
+        composable("auth") {
+            AuthScreen(
+                viewModel = viewModel,
+                onAuthSuccess = {
+                    navController.navigate("groups") {
+                        popUpTo("auth") { inclusive = true }
+                    }
+                }
+            )
+        }
         composable("groups") {
             GroupsScreen(
                 viewModel = viewModel,
@@ -52,9 +72,9 @@ fun SplitApp() {
         }
         composable(
             route = "main/{groupId}",
-            arguments = listOf(navArgument("groupId") { type = NavType.LongType })
+            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val groupId = backStackEntry.arguments?.getLong("groupId") ?: -1L
+            val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
             MainScreen(
                 viewModel = viewModel,
                 groupId = groupId,
@@ -65,9 +85,9 @@ fun SplitApp() {
         }
         composable(
             route = "add_expense/{groupId}",
-            arguments = listOf(navArgument("groupId") { type = NavType.LongType })
+            arguments = listOf(navArgument("groupId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val groupId = backStackEntry.arguments?.getLong("groupId") ?: -1L
+            val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
             AddExpenseScreen(
                 viewModel = viewModel,
                 groupId = groupId,
@@ -77,12 +97,12 @@ fun SplitApp() {
         composable(
             route = "edit_expense/{groupId}/{expenseId}",
             arguments = listOf(
-                navArgument("groupId") { type = NavType.LongType },
-                navArgument("expenseId") { type = NavType.LongType }
+                navArgument("groupId") { type = NavType.StringType },
+                navArgument("expenseId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val groupId = backStackEntry.arguments?.getLong("groupId") ?: -1L
-            val expenseId = backStackEntry.arguments?.getLong("expenseId") ?: -1L
+            val groupId = backStackEntry.arguments?.getString("groupId") ?: ""
+            val expenseId = backStackEntry.arguments?.getString("expenseId") ?: ""
             AddExpenseScreen(
                 viewModel = viewModel,
                 groupId = groupId,

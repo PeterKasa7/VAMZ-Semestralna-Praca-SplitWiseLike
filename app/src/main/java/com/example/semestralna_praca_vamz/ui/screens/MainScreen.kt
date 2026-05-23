@@ -2,6 +2,7 @@ package com.example.semestralna_praca_vamz.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -16,8 +17,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.semestralna_praca_vamz.R
-import com.example.semestralna_praca_vamz.data.db.ExpenseEntity
-import com.example.semestralna_praca_vamz.data.db.UserEntity
+import com.example.semestralna_praca_vamz.data.firebase.*
 import com.example.semestralna_praca_vamz.ui.SplitViewModel
 import java.util.Locale
 
@@ -25,10 +25,10 @@ import java.util.Locale
 @Composable
 fun MainScreen(
     viewModel: SplitViewModel,
-    groupId: Long,
+    groupId: String,
     onBackClick: () -> Unit,
-    onAddExpenseClick: (Long) -> Unit,
-    onEditExpenseClick: (Long, Long) -> Unit
+    onAddExpenseClick: (String) -> Unit,
+    onEditExpenseClick: (String, String) -> Unit
 ) {
     val groups by viewModel.groups.collectAsState()
     val group = groups.find { it.id == groupId } ?: return
@@ -37,7 +37,7 @@ fun MainScreen(
     val expenses by viewModel.getExpenses(groupId).collectAsState(initial = emptyList())
     
     var showAddMemberDialog by remember { mutableStateOf(false) }
-    var newMemberName by remember { mutableStateOf("") }
+    var newMemberEmail by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -80,16 +80,16 @@ fun MainScreen(
                 title = { Text(stringResource(R.string.new_member)) },
                 text = {
                     OutlinedTextField(
-                        value = newMemberName,
-                        onValueChange = { newMemberName = it },
-                        label = { Text(stringResource(R.string.name)) }
+                        value = newMemberEmail,
+                        onValueChange = { newMemberEmail = it },
+                        label = { Text("Email člena") }
                     )
                 },
                 confirmButton = {
                     Button(onClick = {
-                        if (newMemberName.isNotBlank()) {
-                            viewModel.addMemberToGroup(groupId, newMemberName)
-                            newMemberName = ""
+                        if (newMemberEmail.isNotBlank()) {
+                            viewModel.addMemberToGroup(groupId, newMemberEmail)
+                            newMemberEmail = ""
                             showAddMemberDialog = false
                         }
                     }) {
@@ -107,8 +107,8 @@ fun MainScreen(
 }
 
 @Composable
-fun SummarySection(viewModel: SplitViewModel, groupId: Long, members: List<UserEntity>) {
-    var balances by remember { mutableStateOf<Map<Long, Double>>(emptyMap()) }
+fun SummarySection(viewModel: SplitViewModel, groupId: String, members: List<User>) {
+    var balances by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
     
     LaunchedEffect(groupId, members) {
         balances = viewModel.getBalances(groupId)
@@ -143,10 +143,10 @@ fun SummarySection(viewModel: SplitViewModel, groupId: Long, members: List<UserE
 
 @Composable
 fun ExpenseList(
-    expenses: List<ExpenseEntity>, 
-    members: List<UserEntity>, 
+    expenses: List<Expense>, 
+    members: List<User>, 
     viewModel: SplitViewModel,
-    onEditExpenseClick: (Long, Long) -> Unit
+    onEditExpenseClick: (String, String) -> Unit
 ) {
     if (expenses.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -170,7 +170,7 @@ fun ExpenseList(
                             IconButton(onClick = { onEditExpenseClick(expense.groupId, expense.id) }) {
                                 Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit), modifier = Modifier.size(20.dp))
                             }
-                            IconButton(onClick = { viewModel.deleteExpense(expense) }) {
+                            IconButton(onClick = { viewModel.deleteExpense(expense.id) }) {
                                 Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete), modifier = Modifier.size(20.dp))
                             }
                         }

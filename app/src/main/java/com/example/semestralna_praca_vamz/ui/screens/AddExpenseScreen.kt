@@ -17,6 +17,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.semestralna_praca_vamz.R
 import com.example.semestralna_praca_vamz.data.db.*
+import com.example.semestralna_praca_vamz.data.firebase.*
 import com.example.semestralna_praca_vamz.ui.SplitViewModel
 import kotlin.math.abs
 
@@ -24,9 +25,9 @@ import kotlin.math.abs
 @Composable
 fun AddExpenseScreen(
     viewModel: SplitViewModel, 
-    groupId: Long, 
+    groupId: String, 
     onBackClick: () -> Unit,
-    expenseId: Long? = null
+    expenseId: String? = null
 ) {
     val groups by viewModel.groups.collectAsState()
     val group = groups.find { it.id == groupId } ?: return
@@ -34,11 +35,11 @@ fun AddExpenseScreen(
 
     var description by rememberSaveable { mutableStateOf("") }
     var amountText by rememberSaveable { mutableStateOf("") }
-    var selectedPayerId by rememberSaveable { mutableStateOf(-1L) }
+    var selectedPayerId by rememberSaveable { mutableStateOf("") }
     var splitType by remember { mutableStateOf(SplitType.EQUAL) }
 
-    val customInputs = remember { mutableStateMapOf<Long, String>() }
-    var participantsIds by remember { mutableStateOf(emptyList<Long>()) }
+    val customInputs = remember { mutableStateMapOf<String, String>() }
+    var participantsIds by remember { mutableStateOf(emptyList<String>()) }
     var expandedPayer by remember { mutableStateOf(false) }
     
     var isInitialized by rememberSaveable { mutableStateOf(false) }
@@ -53,16 +54,15 @@ fun AddExpenseScreen(
                     selectedPayerId = expense.paidByUserId
                     splitType = expense.splitType
                     
-                    val shares = viewModel.getSharesForExpense(expenseId)
-                    participantsIds = shares.map { it.userId }
-                    shares.forEach { share ->
-                        val value = if (splitType == SplitType.EXACT) (share.owedAmountCents / 100.0).toString()
-                                    else ((share.owedAmountCents.toDouble() / expense.amountCents) * 100).toString()
-                        customInputs[share.userId] = value
+                    participantsIds = expense.shares.keys.toList()
+                    expense.shares.forEach { (userId, amountCents) ->
+                        val value = if (splitType == SplitType.EXACT) (amountCents / 100.0).toString()
+                                    else ((amountCents.toDouble() / expense.amountCents) * 100).toString()
+                        customInputs[userId] = value
                     }
                 }
             } else {
-                if (selectedPayerId == -1L && members.isNotEmpty()) {
+                if (selectedPayerId.isEmpty() && members.isNotEmpty()) {
                     selectedPayerId = members.first().id
                 }
                 if (participantsIds.isEmpty() && members.isNotEmpty()) {
@@ -202,7 +202,7 @@ fun AddExpenseScreen(
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = {
-                    val details = mutableMapOf<Long, Double>()
+                    val details = mutableMapOf<String, Double>()
                     if (splitType != SplitType.EQUAL) {
                         participantsIds.forEach { id ->
                             details[id] = customInputs[id]?.toDoubleOrNull() ?: 0.0
