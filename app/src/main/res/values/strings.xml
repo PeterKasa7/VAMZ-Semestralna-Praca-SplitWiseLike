@@ -44,4 +44,10 @@
     <string name="notification_channel_name">Upozornenia na dlhy</string>
     <string name="debt_status_title">Aktuálny stav dlhov: %1$s</string>
     <string name="debt_owes">%1$s: %2$.2f €</string>
+
+    <string name="error_title">Chyba</string>
+    <string name="error_login_failed">Nesprávny email alebo heslo.</string>
+    <string name="error_user_not_found">Používateľ s týmto emailom neexistuje.</string>
+    <string name="ok">OK</string>
+    <string name="offline_mode">Režim offline (čakám na pripojenie...)</string>
 </resources>

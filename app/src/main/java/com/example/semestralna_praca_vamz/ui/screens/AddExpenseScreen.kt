@@ -16,7 +16,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.semestralna_praca_vamz.R
-import com.example.semestralna_praca_vamz.data.db.*
 import com.example.semestralna_praca_vamz.data.firebase.*
 import com.example.semestralna_praca_vamz.ui.SplitViewModel
 import kotlin.math.abs

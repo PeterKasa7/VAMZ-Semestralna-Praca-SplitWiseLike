@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "1070412303600",
+    "firebase_url": "https://vamzsemestral-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "vamzsemestral",
+    "storage_bucket": "vamzsemestral.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1070412303600:android:bf61bfd24c6f15fd0bc635",
+        "android_client_info": {
+          "package_name": "com.example.semestralna_praca_vamz"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD3P-8ri8uU7Sa6vqB8nQjLIbVyiIkDJxw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,5 +1,6 @@
 package com.example.semestralna_praca_vamz.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,8 +13,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.semestralna_praca_vamz.R
 import com.example.semestralna_praca_vamz.ui.SplitViewModel
 
@@ -42,27 +45,41 @@ fun GroupsScreen(viewModel: SplitViewModel, onGroupClick: (String) -> Unit) {
             }
         }
     ) { paddingValues ->
-        if (groups.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(paddingValues), contentAlignment = Alignment.Center) {
-                Text(text = stringResource(R.string.no_groups))
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                items(groups) { group ->
-                    ListItem(
-                        headlineContent = { Text(group.name) },
-                        trailingContent = {
-                            IconButton(onClick = { viewModel.deleteGroup(group.id) }) {
-                                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_group))
-                            }
-                        },
-                        modifier = Modifier.clickable { onGroupClick(group.id) }
+        Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
+            if (!viewModel.isOnline) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.Red.copy(alpha = 0.8f))
+                        .padding(8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.offline_mode),
+                        color = Color.White,
+                        fontSize = 12.sp
                     )
-                    HorizontalDivider()
+                }
+            }
+
+            if (groups.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(text = stringResource(R.string.no_groups))
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(groups) { group ->
+                        ListItem(
+                            headlineContent = { Text(group.name) },
+                            trailingContent = {
+                                IconButton(onClick = { viewModel.deleteGroup(group.id) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete_group))
+                                }
+                            },
+                            modifier = Modifier.clickable { onGroupClick(group.id) }
+                        )
+                        HorizontalDivider()
+                    }
                 }
             }
         }

@@ -103,6 +103,19 @@ fun MainScreen(
                 }
             )
         }
+
+        if (viewModel.memberError != null) {
+            AlertDialog(
+                onDismissRequest = { viewModel.memberError = null },
+                title = { Text(stringResource(R.string.error_title)) },
+                text = { Text(stringResource(R.string.error_user_not_found)) },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.memberError = null }) {
+                        Text(stringResource(R.string.ok))
+                    }
+                }
+            )
+        }
     }
 }
 

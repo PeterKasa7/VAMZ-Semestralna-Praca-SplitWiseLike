@@ -1,14 +1,17 @@
 package com.example.semestralna_praca_vamz.ui
 
 import android.app.Application
-import android.util.Log
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.semestralna_praca_vamz.data.db.SplitType
 import com.example.semestralna_praca_vamz.data.firebase.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.ktx.auth
@@ -24,17 +27,46 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
     private val auth = Firebase.auth
     private val context = application.applicationContext
 
-    // Reactive Auth State
+    var isOnline by mutableStateOf(checkInitialConnection())
+        private set
+
     var currentUser by mutableStateOf(auth.currentUser)
         private set
 
     init {
+        setupNetworkListener()
         auth.addAuthStateListener { firebaseAuth ->
             currentUser = firebaseAuth.currentUser
         }
     }
 
-    // Real-time Groups
+    private fun checkInitialConnection(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val capabilities = cm.getNetworkCapabilities(cm.activeNetwork)
+        return capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }
+
+    private fun setupNetworkListener() {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        
+        cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                isOnline = true
+            }
+
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                isOnline = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }
+
+            override fun onLost(network: Network) {
+                isOnline = false
+            }
+        })
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val groups: StateFlow<List<Group>> = snapshotFlow { currentUser }
         .flatMapLatest { user ->
@@ -43,12 +75,10 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
                 val subscription = db.collection("groups")
                     .whereArrayContains("members", user.uid)
                     .addSnapshotListener { snapshot, error ->
-                        if (error != null) {
-                            Log.e("Firebase", "Groups error: ${error.message}")
-                            return@addSnapshotListener
+                        if (error == null) {
+                            val groupsList = snapshot?.toObjects(Group::class.java) ?: emptyList()
+                            trySend(groupsList)
                         }
-                        val groupsList = snapshot?.toObjects(Group::class.java) ?: emptyList()
-                        trySend(groupsList)
                     }
                 awaitClose { subscription.remove() }
             }
@@ -92,16 +122,30 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         awaitClose { subscription.remove() }
     }
 
+    var memberError by mutableStateOf<String?>(null)
     fun addMemberToGroup(groupId: String, email: String) {
         viewModelScope.launch {
-            val userSnapshot = db.collection("users").whereEqualTo("email", email).get().await()
-            val user = userSnapshot.toObjects(User::class.java).firstOrNull() ?: return@launch
-            
-            val groupRef = db.collection("groups").document(groupId)
-            val group = groupRef.get().await().toObject(Group::class.java) ?: return@launch
-            
-            if (!group.members.contains(user.id)) {
-                groupRef.update("members", group.members + user.id).await()
+            try {
+                if (email.isBlank()) {
+                    memberError = "Email nemôže byť prázdny"
+                    return@launch
+                }
+                val userSnapshot = db.collection("users").whereEqualTo("email", email).get().await()
+                val user = userSnapshot.toObjects(User::class.java).firstOrNull()
+                
+                if (user == null) {
+                    memberError = "Používateľ nenájdený"
+                    return@launch
+                }
+                
+                val groupRef = db.collection("groups").document(groupId)
+                val group = groupRef.get().await().toObject(Group::class.java) ?: return@launch
+                
+                if (!group.members.contains(user.id)) {
+                    groupRef.update("members", group.members + user.id).await()
+                }
+            } catch (e: Exception) {
+                memberError = e.message
             }
         }
     }
@@ -110,12 +154,10 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         val subscription = db.collection("expenses")
             .whereEqualTo("groupId", groupId)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.e("Firebase", "Expenses error: ${error.message}")
-                    return@addSnapshotListener
+                if (error == null) {
+                    val expenses = snapshot?.toObjects(Expense::class.java) ?: emptyList()
+                    trySend(expenses.sortedByDescending { it.createdAt })
                 }
-                val expenses = snapshot?.toObjects(Expense::class.java) ?: emptyList()
-                trySend(expenses.sortedByDescending { it.createdAt })
             }
         awaitClose { subscription.remove() }
     }
@@ -176,7 +218,6 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
 
             expenseRef.set(expense).await()
 
-            // Trigger notification
             val group = db.collection("groups").document(groupId).get().await().toObject(Group::class.java)
             if (group?.notificationsEnabled == true) {
                 val balances = getBalances(groupId)
@@ -195,7 +236,7 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         val expensesSnapshot = db.collection("expenses").whereEqualTo("groupId", groupId).get().await()
         val expenses = expensesSnapshot.toObjects(Expense::class.java)
         
-        val balances = mutableMapOf<String, Long>() // ID to cents
+        val balances = mutableMapOf<String, Long>()
         group.members.forEach { balances[it] = 0L }
 
         expenses.forEach { expense ->
@@ -208,21 +249,37 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         return balances.mapValues { it.value / 100.0 }
     }
 
+    var authError by mutableStateOf<String?>(null)
+
     fun login(email: String, pass: String, onSuccess: () -> Unit) {
+        if (email.isBlank() || pass.isBlank()) {
+            authError = "Všetky polia musia byť vyplnené"
+            return
+        }
         auth.signInWithEmailAndPassword(email, pass).addOnSuccessListener {
             currentUser = it.user
+            authError = null
             onSuccess()
+        }.addOnFailureListener {
+            authError = it.message
         }
     }
 
     fun register(email: String, pass: String, name: String, onSuccess: () -> Unit) {
+        if (email.isBlank() || pass.isBlank() || name.isBlank()) {
+            authError = "Všetky polia musia byť vyplnené"
+            return
+        }
         auth.createUserWithEmailAndPassword(email, pass).addOnSuccessListener { result ->
             val userId = result.user?.uid ?: return@addOnSuccessListener
             val user = User(id = userId, name = name, email = email)
             db.collection("users").document(userId).set(user).addOnSuccessListener {
                 currentUser = result.user
+                authError = null
                 onSuccess()
             }
+        }.addOnFailureListener {
+            authError = it.message
         }
     }
 
