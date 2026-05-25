@@ -20,6 +20,10 @@ import com.example.semestralna_praca_vamz.ui.SplitViewModel
 import com.example.semestralna_praca_vamz.ui.screens.*
 import com.example.semestralna_praca_vamz.ui.theme.Semestralna_praca_VAMZTheme
 
+/**
+ * Hlavná aktivita aplikácie, ktorá slúži ako vstupný bod.
+ * Zabezpečuje inicializáciu Compose UI a základné nastavenie okna.
+ */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,12 +41,17 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Hlavný navigačný graf aplikácie.
+ * Spravuje prepínanie medzi obrazovkami a odovzdávanie parametrov.
+ */
 @Composable
 fun SplitApp() {
     val navController = rememberNavController()
     val viewModel: SplitViewModel = viewModel()
     val currentUser = viewModel.currentUser
 
+    // Automatické presmerovanie na prihlásenie, ak používateľ nie je autorizovaný
     LaunchedEffect(currentUser) {
         if (currentUser == null) {
             navController.navigate("auth") {

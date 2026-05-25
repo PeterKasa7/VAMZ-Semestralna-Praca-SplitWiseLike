@@ -22,19 +22,26 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
+/**
+ * ViewModel trieda zodpovedná za správu stavu aplikácie a komunikáciu s Firebase.
+ * Zabezpečuje asynchrónne operácie pomocou Coroutines a reaktívny tok dát cez Flow.
+ */
 class SplitViewModel(application: Application) : AndroidViewModel(application) {
     private val db = Firebase.firestore
     private val auth = Firebase.auth
     private val context = application.applicationContext
 
+    // Indikátor stavu internetu pre UI (reaguje okamžite cez State)
     var isOnline by mutableStateOf(checkInitialConnection())
         private set
 
+    // Aktuálne prihlásený používateľ (reaktívny pre zmenu obrazoviek)
     var currentUser by mutableStateOf(auth.currentUser)
         private set
 
     init {
         setupNetworkListener()
+        // Registrácia poslucháča na zmenu stavu autentifikácie
         auth.addAuthStateListener { firebaseAuth ->
             currentUser = firebaseAuth.currentUser
         }
@@ -46,6 +53,9 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         return capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
     }
 
+    /**
+     * Registruje sieťový callback, ktorý sleduje dostupnosť internetu v reálnom čase.
+     */
     private fun setupNetworkListener() {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val request = NetworkRequest.Builder()
@@ -53,20 +63,17 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
             .build()
         
         cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                isOnline = true
-            }
-
+            override fun onAvailable(network: Network) { isOnline = true }
             override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
                 isOnline = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             }
-
-            override fun onLost(network: Network) {
-                isOnline = false
-            }
+            override fun onLost(network: Network) { isOnline = false }
         })
     }
 
+    /**
+     * Real-time stream skupín, ktorých je prihlásený používateľ členom.
+     */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val groups: StateFlow<List<Group>> = snapshotFlow { currentUser }
         .flatMapLatest { user ->
@@ -85,6 +92,9 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /**
+     * Vytvorí novú skupinu a pridá zakladateľa ako prvého člena.
+     */
     fun addGroup(name: String, notificationsEnabled: Boolean) {
         viewModelScope.launch {
             val userId = currentUser?.uid ?: return@launch
@@ -99,12 +109,18 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Odstráni vybranú skupinu z databázy.
+     */
     fun deleteGroup(groupId: String) {
         viewModelScope.launch {
             db.collection("groups").document(groupId).delete().await()
         }
     }
 
+    /**
+     * Vráti stream členov pre konkrétnu skupinu.
+     */
     fun getGroupMembers(groupId: String): Flow<List<User>> = callbackFlow {
         val subscription = db.collection("groups").document(groupId)
             .addSnapshotListener { snapshot, _ ->
@@ -123,6 +139,10 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     var memberError by mutableStateOf<String?>(null)
+
+    /**
+     * Vyhľadá používateľa podľa e-mailu a pridá ho do zoznamu členov skupiny.
+     */
     fun addMemberToGroup(groupId: String, email: String) {
         viewModelScope.launch {
             try {
@@ -150,6 +170,9 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Vráti zoradený zoznam výdavkov pre danú skupinu.
+     */
     fun getExpenses(groupId: String): Flow<List<Expense>> = callbackFlow {
         val subscription = db.collection("expenses")
             .whereEqualTo("groupId", groupId)
@@ -162,16 +185,26 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         awaitClose { subscription.remove() }
     }
 
+    /**
+     * Odstráni konkrétny výdavok.
+     */
     fun deleteExpense(expenseId: String) {
         viewModelScope.launch {
             db.collection("expenses").document(expenseId).delete().await()
         }
     }
 
+    /**
+     * Pomocná funkcia pre získanie detailu výdavku pri jeho editácii.
+     */
     suspend fun getExpenseById(id: String): Expense? {
         return db.collection("expenses").document(id).get().await().toObject(Expense::class.java)
     }
 
+    /**
+     * Hlavná funkcia pre uloženie výdavku. Podporuje rôzne split algoritmy.
+     * Pracuje s centami pre elimináciu chýb zaokrúhľovania.
+     */
     fun addExpenseToGroup(
         groupId: String,
         description: String,
@@ -186,6 +219,7 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
             val amountCents = (amount * 100).toLong()
             val shares = mutableMapOf<String, Long>()
 
+            // Implementácia výpočtu podielov podľa zvolenej stratégie
             when (splitType) {
                 SplitType.EQUAL -> {
                     val shareCents = amountCents / participantsIds.size
@@ -218,6 +252,7 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
 
             expenseRef.set(expense).await()
 
+            // Odoslanie notifikácie ak sú povolené
             val group = db.collection("groups").document(groupId).get().await().toObject(Group::class.java)
             if (group?.notificationsEnabled == true) {
                 val balances = getBalances(groupId)
@@ -230,6 +265,9 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Vypočíta výslednú bilanciu dlhov pre všetkých členov skupiny v reálnom čase.
+     */
     suspend fun getBalances(groupId: String): Map<String, Double> {
         val groupSnapshot = db.collection("groups").document(groupId).get().await()
         val group = groupSnapshot.toObject(Group::class.java) ?: return emptyMap()
@@ -251,6 +289,9 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
 
     var authError by mutableStateOf<String?>(null)
 
+    /**
+     * Prihlásenie používateľa pomocou e-mailu a hesla.
+     */
     fun login(email: String, pass: String, onSuccess: () -> Unit) {
         if (email.isBlank() || pass.isBlank()) {
             authError = "Všetky polia musia byť vyplnené"
@@ -265,6 +306,9 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Registrácia nového účtu a uloženie mena do databázy používateľov.
+     */
     fun register(email: String, pass: String, name: String, onSuccess: () -> Unit) {
         if (email.isBlank() || pass.isBlank() || name.isBlank()) {
             authError = "Všetky polia musia byť vyplnené"
@@ -283,6 +327,9 @@ class SplitViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Odhlásenie používateľa zo systému.
+     */
     fun logout() {
         auth.signOut()
         currentUser = null
